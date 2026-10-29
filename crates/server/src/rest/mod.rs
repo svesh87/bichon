@@ -123,6 +123,19 @@ pub fn build_routes() -> impl Endpoint {
         )
         .nest_no_strip("/api/v1", open_api_route);
 
+    // svesh: MCP for agents. No Timeout: sync_now waits for the sync itself.
+    let app_logic = if crate::mcp::MCP_SETTINGS.enabled {
+        app_logic.nest_no_strip(
+            "/mcp",
+            crate::mcp::mcp_endpoint()
+                .with(ApiGuard)
+                .with(ErrorCapture)
+                .with(Tracing),
+        )
+    } else {
+        app_logic
+    };
+
     let app_logic = add_web_assets(app_logic);
 
     Route::new()

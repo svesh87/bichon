@@ -19,6 +19,7 @@
 pub mod common;
 pub mod error;
 pub mod export;
+pub mod mcp;
 pub mod rest;
 
 #[cfg(test)]

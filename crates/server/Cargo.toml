@@ -38,6 +38,12 @@ sysinfo.workspace = true
 base64.workspace = true
 uuid.workspace = true
 sha2 = "0.10"
+# svesh: MCP endpoint (crates/server/src/mcp).
+poem-mcpserver = { version = "=0.3.1", features = ["streamable-http"] }
+schemars = "1.0"
+mail-parser.workspace = true
+mail-send.workspace = true
+mime_guess.workspace = true
 
 [dev-dependencies]
 poem = { version = "3.1.12", features = ["test"] }

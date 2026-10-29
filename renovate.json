@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "svesh fork: only the fork's own build (base images, actions) and a reminder PR when upstream releases; upstream's Cargo/npm dependencies come with upstream merges.",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "baseBranchPatterns": ["svesh"],
+  "enabledManagers": ["dockerfile", "github-actions", "custom.regex"],
+  "minimumReleaseAge": "14 days",
+  "internalChecksFilter": "strict",
+  "dockerfile": {
+    "managerFilePatterns": ["/^docker/svesh\\.Dockerfile$/"]
+  },
+  "github-actions": {
+    "managerFilePatterns": ["/^\\.github/workflows/svesh-.*\\.ya?ml$/"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Upstream release the fork is based on (SVESH.md); the PR is a reminder to merge that tag",
+      "managerFilePatterns": ["/^SVESH\\.md$/"],
+      "matchStrings": [
+        "<!-- renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) -->\\nUpstream: (?<currentValue>\\S+)"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "Rust of the check job (same versions as the rust image in docker/svesh.Dockerfile)",
+      "managerFilePatterns": ["/^\\.github/workflows/svesh-build\\.yml$/"],
+      "matchStrings": ["RUST_VERSION: \"(?<currentValue>[^\"]+)\""],
+      "depNameTemplate": "rust",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "cargo-llvm-cov of the check job",
+      "managerFilePatterns": ["/^\\.github/workflows/svesh-build\\.yml$/"],
+      "matchStrings": ["CARGO_LLVM_COV_VERSION: \"(?<currentValue>[^\"]+)\""],
+      "depNameTemplate": "cargo-llvm-cov",
+      "datasourceTemplate": "crate"
+    },
+    {
+      "customType": "regex",
+      "description": "pnpm in the fork's Dockerfile",
+      "managerFilePatterns": ["/^docker/svesh\\.Dockerfile$/"],
+      "matchStrings": ["npm install -g pnpm@(?<currentValue>\\S+)"],
+      "depNameTemplate": "pnpm",
+      "datasourceTemplate": "npm"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Node: stay on the 24 LTS line",
+      "matchDepNames": ["node"],
+      "allowedVersions": "/^24\\./"
+    },
+    {
+      "description": "Upstream release: a reminder, not an automatic update",
+      "matchDepNames": ["rustmailer/bichon"],
+      "prBodyNotes": ["Merge the upstream tag into `svesh` (see SVESH.md), then bump this line in the same PR."]
+    }
+  ]
+}

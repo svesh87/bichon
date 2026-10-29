@@ -144,6 +144,14 @@ impl Permission {
     /// Allow SMTP ingestion into SPECIFIC accounts.
     pub const DATA_SMTP_INGEST: &str = "data:smtp:ingest";
 
+    /// svesh: start a download (sync) of SPECIFIC accounts now, without the
+    /// rest of `account:manage` (MCP `sync_now`).
+    pub const ACCOUNT_SYNC: &str = "account:sync";
+
+    /// svesh: save drafts into the Drafts folder of SPECIFIC accounts on the
+    /// IMAP server (MCP `save_draft`). Never sends.
+    pub const DATA_DRAFT: &str = "data:draft";
+
     pub fn global_permissions() -> Vec<(&'static str, &'static str)> {
         vec![
             (
@@ -245,6 +253,14 @@ impl Permission {
             (
                 Self::DATA_SMTP_INGEST,
                 "Receive and archive emails via SMTP for authorized accounts.",
+            ),
+            (
+                Self::ACCOUNT_SYNC,
+                "Start a sync of authorized accounts now (MCP).",
+            ),
+            (
+                Self::DATA_DRAFT,
+                "Save drafts into the Drafts folder of authorized accounts (MCP; never sends).",
             ),
         ]
     }

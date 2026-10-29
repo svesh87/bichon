@@ -1,0 +1,119 @@
+name: svesh-build
+
+on:
+  push:
+    branches: [svesh]
+  pull_request:
+    branches: [svesh]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: svesh-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/svesh87/bichon
+  RUST_VERSION: "1.99.0"
+  CARGO_LLVM_COV_VERSION: "0.9.1"
+
+jobs:
+  check:
+    # The fork's code: rustfmt, clippy, MCP tests, line coverage >= 80%.
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal \
+            --component clippy,rustfmt,llvm-tools-preview
+          rustup default "$RUST_VERSION"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-llvm-cov
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: svesh-check-${{ env.RUST_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: svesh-check-${{ env.RUST_VERSION }}-
+
+      - name: cargo-llvm-cov
+        run: |
+          cargo llvm-cov --version 2>/dev/null | grep -q "$CARGO_LLVM_COV_VERSION" \
+            || cargo install cargo-llvm-cov --version "$CARGO_LLVM_COV_VERSION" --locked
+
+      - name: Check
+        run: |
+          # The server's build script embeds web/dist; the UI is not under test here.
+          mkdir -p web/dist && echo '<!doctype html><title>check</title>' > web/dist/index.html
+          .github/scripts/svesh-check.sh
+
+  build:
+    needs: check
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Upstream version
+        id: version
+        run: echo "version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/svesh.Dockerfile
+          load: true
+          tags: bichon:ci
+          build-args: VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test (starts, MCP mounted behind auth)
+        run: |
+          docker run -d --name bichon -e BICHON_ENCRYPT_PASSWORD=ci-only \
+            -e BICHON_ENABLE_MCP=true -p 127.0.0.1:15630:15630 bichon:ci
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:15630/api/status && break; sleep 1; done
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:15630/mcp \
+            -H 'Content-Type: application/json' -H 'Accept: application/json' -d '{}')
+          echo "MCP without a token: $code"
+          test "$code" = 401
+          docker logs bichon | tail -5
+
+      - name: Tags
+        id: meta
+        if: github.event_name != 'pull_request'
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}-${{ github.run_number }}
+            type=sha,format=long
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/svesh.Dockerfile
+          push: true
+          build-args: VERSION=${{ steps.version.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
