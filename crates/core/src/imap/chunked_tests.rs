@@ -217,31 +217,31 @@ async fn retrieve_skips_gone_messages_and_stops_when_cancelled() {
 #[test]
 fn small_messages_are_grouped_large_ones_go_alone() {
     let chunk = 100;
-    let steps = plan_steps(&[(1, 10), (2, 200), (3, 0), (4, 100), (5, 50)], chunk);
+    let steps = plan_steps(&[(1, 10), (2, 200), (3, 0), (4, 30), (5, 50)], chunk);
     assert_eq!(
         steps,
         vec![
             Step::Single(2, 200),
             Step::Single(3, 0),
-            Step::Group(vec![(1, 10), (4, 100), (5, 50)]),
+            Step::Group(vec![(1, 10), (4, 30), (5, 50)]),
         ]
     );
 
-    // A group closes at GROUP_BYTES ...
-    let half = (GROUP_BYTES / 2) as u32;
-    let steps = plan_steps(&[(1, half), (2, half), (3, 1)], half);
+    // A group's total stays within the chunk size: a response is never
+    // larger than one part.
+    let steps = plan_steps(&[(1, 60), (2, 40), (3, 1), (4, 100)], chunk);
     assert_eq!(
         steps,
         vec![
-            Step::Group(vec![(1, half), (2, half)]),
-            Step::Group(vec![(3, 1)])
+            Step::Group(vec![(1, 60), (2, 40)]),
+            Step::Group(vec![(3, 1)]),
+            Step::Group(vec![(4, 100)]),
         ]
     );
-    // ... and at GROUP_MAX messages.
-    let many: Vec<(u32, u32)> = (1..=GROUP_MAX as u32 + 1).map(|uid| (uid, 1)).collect();
+    // Many tiny messages: as many per group as fit.
+    let many: Vec<(u32, u32)> = (1..=150).map(|uid| (uid, 1)).collect();
     let steps = plan_steps(&many, chunk);
     assert_eq!(steps.len(), 2);
-    assert!(matches!(&steps[1], Step::Group(g) if g == &vec![(GROUP_MAX as u32 + 1, 1)]));
     assert!(plan_steps(&[], chunk).is_empty());
 }
 

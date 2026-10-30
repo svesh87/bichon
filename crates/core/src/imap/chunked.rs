@@ -26,8 +26,9 @@
 //! on its own, in parts of `BODY.PEEK[]<offset.length>`, as Thunderbird does
 //! (`mail.imap.chunk_size`, 136 KB by default): small responses, steady
 //! traffic, and a dropped connection costs one part instead of a batch.
-//! Messages no larger than a part share one FETCH (up to `GROUP_BYTES`), so
-//! ordinary mail costs a few round trips per batch, not one per message.
+//! The chunk size is the most one response may carry: small messages share
+//! one FETCH while their total stays within it, so ordinary mail costs a few
+//! round trips per batch, not one per message.
 
 use std::sync::LazyLock;
 
@@ -191,13 +192,6 @@ async fn fetch_parts(
 pub type Progress<'a> =
     Option<&'a (dyn Fn(u64, Option<f64>, Option<f64>) -> BichonResult<()> + Send + Sync)>;
 
-/// Small messages share one FETCH while their bodies add up to at most this
-/// many bytes: a few round trips instead of one per message, and responses
-/// still small enough for servers that drop large ones.
-pub const GROUP_BYTES: u64 = 1024 * 1024;
-/// At most this many messages per shared FETCH.
-pub const GROUP_MAX: usize = 50;
-
 /// A warning in the running session's state (the UI shows it). Core unit
 /// tests have no store: there it is only logged.
 #[cfg(not(test))]
@@ -222,9 +216,10 @@ pub enum Step {
     Single(u32, u32),
 }
 
-/// Messages up to `chunk` bytes are grouped (up to `GROUP_BYTES` and
-/// `GROUP_MAX` per group); larger ones and those of unknown size (0) go
-/// alone, in parts. Order is kept within each kind.
+/// `chunk` is the most one response may carry. Messages up to it are grouped
+/// while the group's total stays within it; larger ones and those of unknown
+/// size (0) go alone, in parts of `chunk`. How many messages come at once is
+/// the account's batch size. Order is kept within each kind.
 pub fn plan_steps(messages: &[(u32, u32)], chunk: u32) -> Vec<Step> {
     let mut steps = Vec::new();
     let mut group: Vec<(u32, u32)> = Vec::new();
@@ -234,9 +229,7 @@ pub fn plan_steps(messages: &[(u32, u32)], chunk: u32) -> Vec<Step> {
             steps.push(Step::Single(uid, size));
             continue;
         }
-        if !group.is_empty()
-            && (group_bytes + u64::from(size) > GROUP_BYTES || group.len() >= GROUP_MAX)
-        {
+        if !group.is_empty() && group_bytes + u64::from(size) > u64::from(chunk) {
             steps.push(Step::Group(std::mem::take(&mut group)));
             group_bytes = 0;
         }
