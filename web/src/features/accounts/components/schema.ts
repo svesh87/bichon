@@ -162,6 +162,13 @@ export const getAccountSchema = (isEdit: boolean, t: (key: string) => string) =>
       .max(100 * 1024 * 1024, {
         message: t('validation.maxEmailSizeTooLarge'),
       }),
+    // svesh: chunked download, KB per part; empty = server default, 0 = off.
+    imap_fetch_chunk_kb: z
+      .number({ invalid_type_error: t('validation.imapFetchChunkKbInvalid') })
+      .int()
+      .min(0, { message: t('validation.imapFetchChunkKbInvalid') })
+      .max(65536, { message: t('validation.imapFetchChunkKbInvalid') })
+      .optional(),
     auto_download_new_mailboxes: z.boolean(),
     download_schedule: z
       .string()

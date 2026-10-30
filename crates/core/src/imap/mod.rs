@@ -20,6 +20,8 @@
 pub mod capabilities;
 // svesh: opt-in chunked body download.
 pub mod chunked;
+// svesh: wait before reconnecting after a dropped connection.
+pub mod reconnect;
 pub mod client;
 pub mod executor;
 pub mod manager;

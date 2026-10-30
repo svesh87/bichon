@@ -11,9 +11,11 @@ MIN_COVERAGE=${MIN_COVERAGE:-80}
 OWN_FILES="crates/server/src/mcp/*.rs
 crates/core/src/imap/chunked.rs
 crates/core/src/imap/chunked_tests.rs
+crates/core/src/imap/reconnect.rs
+crates/core/src/imap/reconnect_tests.rs
 crates/core/src/archive/imap/download/unchanged.rs
 crates/core/src/archive/imap/download/unchanged_tests.rs"
-OWN_RE='^(crates/server/src/mcp/|crates/core/src/imap/chunked|crates/core/src/archive/imap/download/unchanged)'
+OWN_RE='^(crates/server/src/mcp/|crates/core/src/imap/(chunked|reconnect)|crates/core/src/archive/imap/download/unchanged)'
 
 echo "== rustfmt"
 # shellcheck disable=SC2086 # the list is globs
@@ -33,12 +35,12 @@ fi
 echo "== tests + coverage"
 cargo llvm-cov clean --workspace
 cargo llvm-cov --no-report --locked -p bichon-server --lib -- mcp::
-cargo llvm-cov --no-report --locked -p bichon-core --lib -- imap::chunked archive::imap::download::unchanged
+cargo llvm-cov --no-report --locked -p bichon-core --lib -- imap::chunked imap::reconnect archive::imap::download
 cargo llvm-cov report --json --summary-only --output-path cov.json
 python3 -I - "$MIN_COVERAGE" <<'EOF'
 import json, re, sys
 minimum = float(sys.argv[1])
-own = re.compile(r"/crates/(server/src/mcp/|core/src/imap/chunked\.rs|core/src/archive/imap/download/unchanged\.rs)")
+own = re.compile(r"/crates/(server/src/mcp/|core/src/imap/(chunked|reconnect)\.rs|core/src/archive/imap/download/unchanged\.rs)")
 files = [f for f in json.load(open("cov.json"))["data"][0]["files"]
          if own.search(f["filename"]) and not f["filename"].endswith("tests.rs")]
 covered = sum(f["summary"]["lines"]["covered"] for f in files)

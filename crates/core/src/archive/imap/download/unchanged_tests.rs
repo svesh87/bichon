@@ -28,6 +28,44 @@ fn mailbox(uid_validity: Option<u32>, uid_next: Option<u32>, highest: Option<u32
 }
 
 #[test]
+fn gap_fill_scans_only_unarchived_uids() {
+    let remote_uids = [1, 2, 3, 4];
+    let archived = [1u64, 3, 99];
+    let local = mailbox(Some(7), None, None);
+    // Same UIDVALIDITY: archived UIDs need no header scan.
+    assert_eq!(
+        uids_to_scan(
+            &local,
+            &mailbox(Some(7), None, None),
+            &remote_uids,
+            archived
+        ),
+        vec![2, 4]
+    );
+    // Changed or unknown UIDVALIDITY: every remote UID is compared.
+    assert_eq!(
+        uids_to_scan(
+            &local,
+            &mailbox(Some(8), None, None),
+            &remote_uids,
+            archived
+        ),
+        vec![1, 2, 3, 4]
+    );
+    assert_eq!(
+        uids_to_scan(
+            &mailbox(None, None, None),
+            &mailbox(None, None, None),
+            &remote_uids,
+            archived
+        ),
+        vec![1, 2, 3, 4]
+    );
+    // Everything archived: nothing to scan.
+    assert!(uids_to_scan(&local, &local, &[1, 3], archived).is_empty());
+}
+
+#[test]
 fn skips_only_when_nothing_can_be_new() {
     let local = mailbox(Some(7), None, Some(100));
     assert!(has_no_new_mail(&local, &mailbox(Some(7), Some(101), None)));

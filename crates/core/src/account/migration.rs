@@ -456,6 +456,10 @@ pub struct Account {
     pub download_batch_size: Option<u32>,
     #[serde(default)]
     pub max_email_size_bytes: Option<u64>,
+    /// svesh: chunked body download, part size in KB (`crate::imap::chunked`).
+    /// `None` = the server default (`BICHON_IMAP_FETCH_CHUNK_KB`), `0` = off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imap_fetch_chunk_kb: Option<u32>,
     pub known_folders: Option<BTreeSet<String>>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -578,6 +582,7 @@ impl Account {
             created_by: user_id,
             download_batch_size: request.download_batch_size,
             max_email_size_bytes: request.max_email_size_bytes,
+            imap_fetch_chunk_kb: request.imap_fetch_chunk_kb,
             date_before: request.date_before,
             auto_download_new_mailboxes: request.auto_download_new_mailboxes,
             imap_quota_bytes: request.imap_quota_bytes,
@@ -1111,6 +1116,15 @@ impl Account {
 
             if let Some(max_email_size_bytes) = request.max_email_size_bytes {
                 new.max_email_size_bytes = Some(max_email_size_bytes);
+            }
+
+            // svesh: 0 is kept (explicitly off); clear_imap_fetch_chunk_kb
+            // goes back to the server default.
+            if let Some(chunk_kb) = request.imap_fetch_chunk_kb {
+                new.imap_fetch_chunk_kb = Some(chunk_kb);
+            }
+            if request.clear_imap_fetch_chunk_kb == Some(true) {
+                new.imap_fetch_chunk_kb = None;
             }
         }
 
@@ -1732,6 +1746,7 @@ mod tests {
             download_interval_min: None,
             download_batch_size: None,
             max_email_size_bytes: None,
+            imap_fetch_chunk_kb: None,
             use_dangerous: false,
             pgp_key: None,
             imap_quota_bytes: None,

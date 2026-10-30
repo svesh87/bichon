@@ -270,6 +270,13 @@ export function AccountDetailDrawer({ open, onOpenChange, currentRow }: Props) {
                         ? mb(row.max_email_size_bytes)
                         : t('accounts.maxEmailSizeBytesUnlimited', 'Unlimited')}
                     </InfoRow>
+                    <InfoRow label={t('accounts.imapFetchChunkKb', 'Chunk size')}>
+                      {row.imap_fetch_chunk_kb === undefined || row.imap_fetch_chunk_kb === null
+                        ? t('accounts.imapFetchChunkKbDefault', 'Server default')
+                        : row.imap_fetch_chunk_kb === 0
+                          ? t('accounts.imapFetchChunkKbOff', 'Off')
+                          : `${row.imap_fetch_chunk_kb} KB`}
+                    </InfoRow>
                     <InfoRow label={t('accounts.downloadSchedule', 'Download schedule')}>
                       {row.download_schedule
                         ? (

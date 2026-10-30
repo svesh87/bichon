@@ -50,9 +50,16 @@ jobs:
 
       - name: Check
         run: |
-          # The server's build script embeds web/dist; the UI is not under test here.
+          # The server's build script embeds web/dist; the UI is tested in the next step.
           mkdir -p web/dist && echo '<!doctype html><title>check</title>' > web/dist/index.html
           .github/scripts/svesh-check.sh
+
+      - name: Web tests (account settings the fork extends)
+        working-directory: web
+        run: |
+          npx --yes pnpm@10.34.6 install --frozen-lockfile
+          npx --yes pnpm@10.34.6 exec tsc -b
+          npx --yes pnpm@10.34.6 exec vitest run src/features/accounts
 
   build:
     needs: check

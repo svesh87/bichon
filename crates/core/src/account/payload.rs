@@ -52,6 +52,10 @@ pub struct AccountCreateRequest {
     )]
     pub download_batch_size: Option<u32>,
     pub max_email_size_bytes: Option<u64>,
+    /// svesh: chunked body download, KB per part; `0` = off, absent = server default.
+    #[cfg_attr(feature = "web-api", oai(validator(maximum(value = "65536"))))]
+    #[serde(default)]
+    pub imap_fetch_chunk_kb: Option<u32>,
     pub use_dangerous: bool,
     pub pgp_key: Option<String>,
     pub imap_quota_bytes: Option<u64>,
@@ -232,6 +236,13 @@ pub struct AccountUpdateRequest {
     )]
     pub download_batch_size: Option<u32>,
     pub max_email_size_bytes: Option<u64>,
+    /// svesh: chunked body download, KB per part; `0` = off.
+    #[cfg_attr(feature = "web-api", oai(validator(maximum(value = "65536"))))]
+    #[serde(default)]
+    pub imap_fetch_chunk_kb: Option<u32>,
+    /// svesh: true = back to the server default for chunked download.
+    #[serde(default)]
+    pub clear_imap_fetch_chunk_kb: Option<bool>,
     pub use_dangerous: Option<bool>,
 
     pub pgp_key: Option<String>,

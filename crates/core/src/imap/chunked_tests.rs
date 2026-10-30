@@ -34,6 +34,17 @@ fn chunk_setting_parses_kilobytes() {
     assert_eq!(parse_chunk_kb(Some("999999")), Some(65_536 * 1024));
 }
 
+#[test]
+fn account_setting_wins_over_server_default() {
+    let server = Some(128 * 1024);
+    assert_eq!(effective_chunk(None, server), server);
+    assert_eq!(effective_chunk(None, None), None);
+    assert_eq!(effective_chunk(Some(0), server), None, "0 turns it off");
+    assert_eq!(effective_chunk(Some(64), None), Some(64 * 1024));
+    assert_eq!(effective_chunk(Some(64), server), Some(64 * 1024));
+    // chunk_for_account reads the store: tested in the server's MCP tests.
+}
+
 async fn session(handle: &MockImapServerHandle) -> Session<Box<dyn SessionStream>> {
     let tcp = tokio::net::TcpStream::connect((handle.host(), handle.port()))
         .await

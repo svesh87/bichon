@@ -427,6 +427,33 @@ export function TabDownload() {
               </FormItem>
             )}
           />
+          {/* svesh: chunked download */}
+          <FormField
+            control={control}
+            name="imap_fetch_chunk_kb"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('accounts.imapFetchChunkKb')}</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      className="flex-1"
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const parsed = parseInt(e.target.value, 10);
+                        field.onChange(isNaN(parsed) ? undefined : parsed);
+                      }}
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">KB</span>
+                  </div>
+                </FormControl>
+                <FormDescription>{t('accounts.imapFetchChunkKbDescription')}</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
       </div>
 

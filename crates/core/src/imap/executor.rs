@@ -608,6 +608,8 @@ impl ImapExecutor {
                             retries,
                             MAX_NETWORK_RETRIES
                         );
+                        // svesh: wait before the new LOGIN, not after it.
+                        crate::imap::reconnect::pause_before_reconnect(account.id, retries).await;
                         match ImapExecutor::create_connection(account.id).await {
                             Ok(new_session) => {
                                 *session = new_session;
@@ -751,9 +753,9 @@ impl ImapExecutor {
             return Ok(BatchFetchOutcome::default());
         }
 
-        // svesh: chunked mode (BICHON_IMAP_FETCH_CHUNK_KB) fetches one message
-        // at a time in parts instead of the whole batch in one FETCH.
-        if let Some(chunk) = *crate::imap::chunked::CHUNK_BYTES {
+        // svesh: chunked mode (account setting or BICHON_IMAP_FETCH_CHUNK_KB)
+        // fetches one message at a time in parts instead of the whole batch.
+        if let Some(chunk) = crate::imap::chunked::chunk_for_account(account_id) {
             return crate::imap::chunked::retrieve_in_chunks(
                 session, account_id, mailbox_id, &sized, chunk, &token, progress,
             )

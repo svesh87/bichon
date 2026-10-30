@@ -192,6 +192,8 @@ export interface AccountModel {
     download_interval_min?: number;
     download_batch_size?: number;
     max_email_size_bytes?: number;
+    // svesh: chunked download, KB per part; absent = server default, 0 = off.
+    imap_fetch_chunk_kb?: number;
     created_by: number;
     created_user_name: string;
     created_user_email: string;

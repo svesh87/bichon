@@ -162,11 +162,29 @@ pub async fn gap_fill_mailbox(
         return Ok(stats);
     }
 
+    // svesh: local snapshot first; with an unchanged UIDVALIDITY only the
+    // UIDs not archived yet go through the header scan below.
+    let local_snapshots = crate::store::tantivy::envelope::ENVELOPE_MANAGER
+        .get_envelope_snapshots_for_mailbox(account_id, local_mailbox.id)?;
+    let scan_uids = super::unchanged::uids_to_scan(
+        local_mailbox,
+        remote_mailbox,
+        &remote_uids,
+        local_snapshots.iter().map(|s| s.uid),
+    );
+    info!(
+        account_id,
+        mailbox = remote_mailbox.name,
+        remote = remote_uids.len(),
+        to_scan = scan_uids.len(),
+        "Gap-fill: header scan"
+    );
+
     // Phase 2: fetch header metadata for all remote uids in batches.
     // A failed batch counts its uids as failed (they cannot be diffed) but
     // does not abort the phase. A cancellation, however, leaves the header
     // list incomplete so the diff would be unreliable — return immediately.
-    let mut remote_headers: Vec<RemoteHeader> = Vec::with_capacity(remote_uids.len());
+    let mut remote_headers: Vec<RemoteHeader> = Vec::with_capacity(scan_uids.len());
     let batch_size = account.download_batch_size.unwrap_or(DEFAULT_BATCH_SIZE) as usize;
     let mut cancelled = false;
     // Progress reported so far across all header batches, so the UI can show
@@ -179,12 +197,12 @@ pub async fn gap_fill_mailbox(
         GapFillState::update_folder_progress(
             account_id,
             remote_mailbox.name.clone(),
-            remote_uids.len() as u64,
+            scan_uids.len() as u64,
             count,
             crate::imap::executor::slow_server_message(None, stall_secs),
         )
     };
-    for chunk in remote_uids.chunks(batch_size) {
+    for chunk in scan_uids.chunks(batch_size) {
         if token.is_cancelled() {
             cancelled = true;
             break;
@@ -219,6 +237,9 @@ pub async fn gap_fill_mailbox(
                         header_retries,
                         MAX_NETWORK_RETRIES
                     );
+                    // svesh: wait before the new LOGIN, not after it.
+                    crate::imap::reconnect::pause_before_reconnect(account_id, header_retries)
+                        .await;
                     match ImapExecutor::create_connection(account_id).await {
                         Ok(new_session) => {
                             session = new_session;
@@ -274,9 +295,7 @@ pub async fn gap_fill_mailbox(
     remote_headers.sort_by_key(|h| h.uid);
     session.logout().await.ok();
 
-    // Phase 3: local snapshot
-    let local_snapshots = crate::store::tantivy::envelope::ENVELOPE_MANAGER
-        .get_envelope_snapshots_for_mailbox(account_id, local_mailbox.id)?;
+    // Phase 3: local snapshot — taken before the header scan (svesh).
 
     // Phase 4: diff
     let missing_uids = compute_missing_uids(&remote_headers, &local_snapshots);
@@ -365,6 +384,8 @@ pub async fn gap_fill_mailbox(
                         retries,
                         MAX_NETWORK_RETRIES
                     );
+                    // svesh: wait before the new LOGIN, not after it.
+                    crate::imap::reconnect::pause_before_reconnect(account_id, retries).await;
                     match ImapExecutor::create_connection(account_id).await {
                         Ok(new_session) => {
                             session2 = new_session;

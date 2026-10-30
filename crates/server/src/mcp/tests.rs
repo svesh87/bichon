@@ -634,6 +634,83 @@ async fn store_scenarios() {
     save_draft_explicit_folder_and_errors().await;
     sync_now_runs_and_checks_rights().await;
     endpoint_speaks_mcp_behind_the_token_guard().await;
+    account_chunk_setting_roundtrip().await;
+}
+
+/// The per-account chunk size (crates/core/src/imap/chunked.rs) through the
+/// account API: set, explicit 0 (off), cleared back to the server default.
+async fn account_chunk_setting_roundtrip() {
+    use bichon_core::imap::chunked::{chunk_for_account, CHUNK_BYTES};
+
+    let token = crate::tests::admin_token().await;
+    let auth = format!("Bearer {token}");
+    // Download settings are IMAP-only in the update path.
+    let (port, _) = mock_imap(true).await;
+    let id = create_account(json!({
+        "email": "chunks@example.com",
+        "enabled": true,
+        "account_type": "IMAP",
+        "use_dangerous": false,
+        "download_interval_min": 600,
+        "imap_fetch_chunk_kb": 64,
+        "imap": {
+            "host": "127.0.0.1",
+            "port": port,
+            "encryption": "None",
+            "auth": {"auth_type": "Password", "password": "secret"}
+        }
+    }))
+    .await;
+    // The API writes an unset field as null.
+    let stored = |body: Value| {
+        body.get("imap_fetch_chunk_kb")
+            .filter(|v| !v.is_null())
+            .cloned()
+    };
+    let read = || async {
+        let resp = api()
+            .get(format!("/api/v1/account/{id}"))
+            .header("Authorization", &auth)
+            .send()
+            .await;
+        serde_json::from_str::<Value>(&resp.0.into_body().into_string().await.unwrap()).unwrap()
+    };
+    let update = |body: Value| {
+        let auth = auth.clone();
+        async move {
+            api()
+                .post(format!("/api/v1/account/{id}"))
+                .header("Authorization", auth)
+                .body_json(&body)
+                .send()
+                .await
+                .assert_status_is_ok();
+        }
+    };
+
+    assert_eq!(stored(read().await), Some(json!(64)));
+    assert_eq!(chunk_for_account(id), Some(64 * 1024));
+
+    update(json!({"imap_fetch_chunk_kb": 0})).await;
+    assert_eq!(stored(read().await), Some(json!(0)));
+    assert_eq!(chunk_for_account(id), None, "0 turns it off");
+
+    // An update that does not mention the field keeps it.
+    update(json!({"account_name": "Chunks"})).await;
+    assert_eq!(stored(read().await), Some(json!(0)));
+
+    update(json!({"clear_imap_fetch_chunk_kb": true})).await;
+    assert_eq!(stored(read().await), None);
+    assert_eq!(chunk_for_account(id), *CHUNK_BYTES);
+
+    // Out of range is refused by the API.
+    let resp = api()
+        .post(format!("/api/v1/account/{id}"))
+        .header("Authorization", &auth)
+        .body_json(&json!({"imap_fetch_chunk_kb": 70000}))
+        .send()
+        .await;
+    assert!(resp.0.status().is_client_error());
 }
 
 async fn list_accounts_and_folders() {

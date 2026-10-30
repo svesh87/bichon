@@ -197,6 +197,8 @@ pub async fn fetch_and_save_by_date(
                         retries,
                         MAX_NETWORK_RETRIES
                     );
+                    // svesh: wait before the new LOGIN, not after it.
+                    crate::imap::reconnect::pause_before_reconnect(account_id, retries).await;
                     match ImapExecutor::create_connection(account_id).await {
                         Ok(new_session) => {
                             session = new_session;
@@ -447,6 +449,8 @@ pub async fn fetch_and_save_full_mailbox(
                     );
                     // Refresh the heartbeat after a reconnect too.
                     let _ = DownloadState::set_current_folder(account_id, mailbox.name.clone());
+                    // svesh: wait before the new LOGIN, not after it.
+                    crate::imap::reconnect::pause_before_reconnect(account_id, retries).await;
                     match ImapExecutor::create_connection(account_id).await {
                         Ok(new_session) => {
                             session = new_session;

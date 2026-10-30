@@ -16,7 +16,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! svesh: chunked body download, opt-in (`BICHON_IMAP_FETCH_CHUNK_KB`).
+//! svesh: chunked body download, opt-in: per account (`imap_fetch_chunk_kb`,
+//! the "chunk size" field of the account's download settings) or for the
+//! whole server (`BICHON_IMAP_FETCH_CHUNK_KB`).
 //!
 //! The default download asks for the whole bodies of a batch of messages in
 //! one `UID FETCH`. Some servers (Yandex) stall on such large responses and
@@ -32,7 +34,7 @@ use futures::TryStreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    account::state::DownloadState,
+    account::{migration::AccountModel, state::DownloadState},
     envelope::extractor::extract_raw_and_store_it,
     error::{code::ErrorCode, BichonResult},
     imap::{
@@ -54,6 +56,24 @@ pub fn parse_chunk_kb(value: Option<&str>) -> Option<u32> {
         return None;
     }
     Some(kb.clamp(4, 65_536) * 1024)
+}
+
+/// Part size for an account: its own setting (`imap_fetch_chunk_kb`; `0` =
+/// off) wins over the server default.
+pub fn effective_chunk(account_kb: Option<u32>, server_default: Option<u32>) -> Option<u32> {
+    match account_kb {
+        Some(kb) => parse_chunk_kb(Some(&kb.to_string())),
+        None => server_default,
+    }
+}
+
+/// [`effective_chunk`] for a stored account; an unreadable account uses the
+/// server default.
+pub fn chunk_for_account(account_id: u64) -> Option<u32> {
+    let account_kb = AccountModel::get(account_id)
+        .ok()
+        .and_then(|account| account.imap_fetch_chunk_kb);
+    effective_chunk(account_kb, *CHUNK_BYTES)
 }
 
 /// The whole body of one message, fetched in parts. `None` when the server
