@@ -30,6 +30,12 @@ fn delays_parse_with_default() {
 }
 
 #[test]
+fn no_delay_outside_the_gentle_mode() {
+    assert_eq!(delay_if(false, 1, &[30]), Duration::ZERO);
+    assert_eq!(delay_if(true, 1, &[30]), Duration::from_secs(30));
+}
+
+#[test]
 fn delay_per_attempt_repeats_the_last() {
     let delays = [5, 10];
     assert_eq!(delay_for(0, &delays), Duration::from_secs(5));

@@ -174,7 +174,11 @@ pub async fn gap_fill_mailbox(
         &remote_uids,
         local_snapshots.iter().map(|s| s.uid),
     );
-    let by_uid = super::unchanged::same_uid_validity(local_mailbox, remote_mailbox);
+    // Gentle mode only (crate::imap::chunked::is_gentle); otherwise upstream's
+    // header comparison over every remote UID.
+    let by_uid = crate::imap::chunked::is_gentle(account)
+        && super::unchanged::same_uid_validity(local_mailbox, remote_mailbox);
+    let scan_uids = if by_uid { scan_uids } else { remote_uids.clone() };
     let header_uids: &[u32] = if by_uid { &[] } else { &scan_uids };
     warn!(
         account_id,

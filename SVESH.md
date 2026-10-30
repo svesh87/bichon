@@ -7,6 +7,11 @@ Upstream: 2.2.0
 
 ## What the fork adds
 
+The sync changes below form one **gentle mode for slow servers**, on only for accounts with
+a "Chunk size" (or with `BICHON_IMAP_FETCH_CHUNK_KB` as the server default). Every other
+account syncs exactly as upstream: batches of the account's batch size, no chunks, header
+comparison in gap-fill, immediate reconnects.
+
 - **MCP for AI agents** at `/mcp` (streamable HTTP, behind the API token guard), based on
   upstream's unfinished `feature/add-mcp` branch: `list_accounts`, `list_folders`,
   `sync_now`, `search_emails`, `get_email`, `get_thread`, `save_attachments`, `save_draft`.
@@ -19,6 +24,8 @@ Upstream: 2.2.0
   its own in parts of `BODY.PEEK[]<offset.N>`, as Thunderbird does, instead of whole bodies
   of a batch in one FETCH. For servers that stall or drop the connection on large responses
   (Yandex). Applies to sync and to the body pass of gap-fill; not to gap-fill's header scan.
+  Messages no larger than a part share one FETCH (up to 1 MB / 50 messages), so ordinary
+  mail costs a few round trips per batch; only larger ones go alone, in parts.
   Per account: "Chunk size" in the account's download settings (`imap_fetch_chunk_kb`;
   empty = server default, `0` = off); server default: `BICHON_IMAP_FETCH_CHUNK_KB`.
 - **Folders without new mail are skipped** (`archive/imap/download/unchanged.rs`): when a

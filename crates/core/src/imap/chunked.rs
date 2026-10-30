@@ -26,6 +26,8 @@
 //! on its own, in parts of `BODY.PEEK[]<offset.length>`, as Thunderbird does
 //! (`mail.imap.chunk_size`, 136 KB by default): small responses, steady
 //! traffic, and a dropped connection costs one part instead of a batch.
+//! Messages no larger than a part share one FETCH (up to `GROUP_BYTES`), so
+//! ordinary mail costs a few round trips per batch, not one per message.
 
 use std::sync::LazyLock;
 
@@ -76,11 +78,46 @@ pub fn chunk_for_account(account_id: u64) -> Option<u32> {
     effective_chunk(account_kb, *CHUNK_BYTES)
 }
 
-/// The whole body of one message, fetched in parts. `None` when the server
-/// returns no body (the message is gone). The internal date (epoch millis)
-/// comes with the first part. A part missing after the first one is an error:
-/// a truncated message is never returned.
+/// The fork's gentle mode for slow servers is on for this account (a chunk
+/// size is set): chunked download, gap-fill by UID, skipping folders without
+/// new mail, waiting before reconnects. Off (the default), every account
+/// syncs exactly as upstream does.
+pub fn is_gentle(account: &AccountModel) -> bool {
+    effective_chunk(account.imap_fetch_chunk_kb, *CHUNK_BYTES).is_some()
+}
+
+/// The whole body of one message, fetched in parts. When the first part
+/// brings no body (Yandex does that for some messages) the message is asked
+/// for whole, as upstream does; `None` only if that brings no body either.
+/// A part missing after the first one is an error: a truncated message is
+/// never returned.
 pub async fn fetch_message_in_chunks(
+    session: &mut Session<Box<dyn SessionStream>>,
+    uid: u32,
+    size: u32,
+    chunk: u32,
+) -> BichonResult<Option<(Vec<u8>, i64)>> {
+    if let Some(found) = fetch_parts(session, uid, size, chunk).await? {
+        return Ok(Some(found));
+    }
+    let whole = fetch_group(session, &[(uid, size)]).await?;
+    if whole.is_empty() {
+        tracing::warn!(
+            uid,
+            size,
+            "No body for the message, neither in parts nor whole"
+        );
+    } else {
+        tracing::warn!(
+            uid,
+            size,
+            "No body for the first part; fetched whole instead"
+        );
+    }
+    Ok(whole.into_iter().next().map(|(_, body, date)| (body, date)))
+}
+
+async fn fetch_parts(
     session: &mut Session<Box<dyn SessionStream>>,
     uid: u32,
     size: u32,
@@ -96,6 +133,8 @@ pub async fn fetch_message_in_chunks(
             format!("(UID BODY.PEEK[]<{offset}.{chunk}>)")
         };
         let mut part: Option<Vec<u8>> = None;
+        // What came back, for the log when no body did.
+        let mut seen: Vec<String> = Vec::new();
         {
             let mut stream = session
                 .uid_fetch(uid.to_string(), &items)
@@ -106,6 +145,12 @@ pub async fn fetch_message_in_chunks(
                 .await
                 .map_err(|e| raise_error!(format!("{:#?}", e), classify_imap_error(&e)))?
             {
+                seen.push(format!(
+                    "uid={:?} body={} size={:?}",
+                    fetch.uid,
+                    fetch.body().map_or(0, <[u8]>::len),
+                    fetch.size
+                ));
                 // Unsolicited FETCH responses (flag changes of other messages)
                 // may come along; only ours counts.
                 if fetch.uid != Some(uid) {
@@ -124,6 +169,7 @@ pub async fn fetch_message_in_chunks(
         }
         let Some(part) = part else {
             if offset == 0 {
+                tracing::warn!(uid, size, chunk, responses = ?seen, "No body in the first part");
                 return Ok(None);
             }
             // Never store a truncated message: fail, the batch is retried.
@@ -145,6 +191,100 @@ pub async fn fetch_message_in_chunks(
 pub type Progress<'a> =
     Option<&'a (dyn Fn(u64, Option<f64>, Option<f64>) -> BichonResult<()> + Send + Sync)>;
 
+/// Small messages share one FETCH while their bodies add up to at most this
+/// many bytes: a few round trips instead of one per message, and responses
+/// still small enough for servers that drop large ones.
+pub const GROUP_BYTES: u64 = 1024 * 1024;
+/// At most this many messages per shared FETCH.
+pub const GROUP_MAX: usize = 50;
+
+/// A warning in the running session's state (the UI shows it). Core unit
+/// tests have no store: there it is only logged.
+#[cfg(not(test))]
+fn session_error(account_id: u64, message: String) {
+    let _ = DownloadState::append_session_error(account_id, message);
+}
+
+#[cfg(test)]
+fn session_error(account_id: u64, message: String) {
+    tracing::warn!(account_id, message, "session error (test: not stored)");
+}
+
+/// A fetched message: uid, size from the size pass, body, internal date.
+type Fetched = (u32, u32, Vec<u8>, i64);
+
+/// One step of the chunked download.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Step {
+    /// Small messages (known size up to a part), fetched whole in one FETCH.
+    Group(Vec<(u32, u32)>),
+    /// A large or unknown-size message, fetched in parts.
+    Single(u32, u32),
+}
+
+/// Messages up to `chunk` bytes are grouped (up to `GROUP_BYTES` and
+/// `GROUP_MAX` per group); larger ones and those of unknown size (0) go
+/// alone, in parts. Order is kept within each kind.
+pub fn plan_steps(messages: &[(u32, u32)], chunk: u32) -> Vec<Step> {
+    let mut steps = Vec::new();
+    let mut group: Vec<(u32, u32)> = Vec::new();
+    let mut group_bytes = 0u64;
+    for &(uid, size) in messages {
+        if size == 0 || size > chunk {
+            steps.push(Step::Single(uid, size));
+            continue;
+        }
+        if !group.is_empty()
+            && (group_bytes + u64::from(size) > GROUP_BYTES || group.len() >= GROUP_MAX)
+        {
+            steps.push(Step::Group(std::mem::take(&mut group)));
+            group_bytes = 0;
+        }
+        group_bytes += u64::from(size);
+        group.push((uid, size));
+    }
+    if !group.is_empty() {
+        steps.push(Step::Group(group));
+    }
+    steps
+}
+
+/// Whole bodies of a group of small messages in one FETCH: (uid, body,
+/// internal date). Messages gone from the server are simply absent.
+pub async fn fetch_group(
+    session: &mut Session<Box<dyn SessionStream>>,
+    messages: &[(u32, u32)],
+) -> BichonResult<Vec<(u32, Vec<u8>, i64)>> {
+    let uid_set = messages
+        .iter()
+        .map(|(uid, _)| uid.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let wanted: std::collections::HashSet<u32> = messages.iter().map(|(uid, _)| *uid).collect();
+    let mut stream = session
+        .uid_fetch(&uid_set, "(UID INTERNALDATE BODY.PEEK[])")
+        .await
+        .map_err(|e| raise_error!(format!("{:#?}", e), classify_imap_error(&e)))?;
+    let mut bodies = Vec::with_capacity(messages.len());
+    while let Some(fetch) = stream
+        .try_next()
+        .await
+        .map_err(|e| raise_error!(format!("{:#?}", e), classify_imap_error(&e)))?
+    {
+        let Some(uid) = fetch.uid.filter(|uid| wanted.contains(uid)) else {
+            continue;
+        };
+        if let Some(body) = fetch.body() {
+            let date = fetch
+                .internal_date()
+                .map(|d| d.timestamp_millis())
+                .unwrap_or(0);
+            bodies.push((uid, body.to_vec(), date));
+        }
+    }
+    Ok(bodies)
+}
+
 /// Chunked counterpart of the body pass of
 /// `ImapExecutor::uid_batch_retrieve_emails`: same outcome, same handling of
 /// unparseable messages, same progress reports (one per stored message).
@@ -163,7 +303,7 @@ pub async fn retrieve_in_chunks(
             let _ = progress(count, None, None);
         }
     };
-    for &(uid, size) in messages {
+    for step in plan_steps(messages, chunk) {
         if token.is_cancelled() {
             report(outcome.stored);
             return Err(raise_error!(
@@ -171,52 +311,87 @@ pub async fn retrieve_in_chunks(
                 ErrorCode::InternalError
             ));
         }
-        let fetched = match fetch_message_in_chunks(session, uid, size, chunk).await {
+        let fetched: BichonResult<Vec<Fetched>> = match &step {
+            Step::Group(group) => fetch_group(session, group).await.map(|bodies| {
+                bodies
+                    .into_iter()
+                    .map(|(uid, body, date)| {
+                        let size = group.iter().find(|(u, _)| *u == uid).map_or(0, |(_, s)| *s);
+                        (uid, size, body, date)
+                    })
+                    .collect()
+            }),
+            Step::Single(uid, size) => fetch_message_in_chunks(session, *uid, *size, chunk)
+                .await
+                .map(|fetched| {
+                    fetched
+                        .map(|(body, date)| vec![(*uid, *size, body, date)])
+                        .unwrap_or_default()
+                }),
+        };
+        let fetched = match fetched {
             Ok(fetched) => fetched,
             Err(e) => {
                 report(outcome.stored);
                 return Err(e);
             }
         };
-        let Some((body, internal_date)) = fetched else {
+        let expected = match &step {
+            Step::Group(group) => group.len(),
+            Step::Single(..) => 1,
+        };
+        // Messages listed by the server whose body did not come: not archived,
+        // counted like unparseable ones (the batch reports them, gap-fill
+        // retries them) instead of passing silently as gone.
+        if fetched.len() < expected {
+            let missing = expected - fetched.len();
+            outcome.parse_skipped += missing as u64;
             tracing::warn!(
                 account_id,
                 mailbox_id,
-                uid,
-                "FETCH returned no body, skipping message"
+                missing,
+                "No body from the server for some messages: not archived, gap-fill will retry"
             );
-            continue;
-        };
-        let size = if size > 0 { size } else { body.len() as u32 };
-        match extract_raw_and_store_it(&body, uid, size, internal_date, account_id, mailbox_id)
-            .await
-        {
-            Ok(()) => {}
-            Err(e) if e.code() == ErrorCode::EmailParseError => {
-                outcome.parse_skipped += 1;
-                tracing::warn!(
-                    account_id,
-                    mailbox_id,
-                    uid,
-                    "Skipping unparseable email (not archived)"
-                );
-                let _ = DownloadState::append_session_error(
-                    account_id,
-                    format!(
-                        "Skipped unparseable email (mailbox {mailbox_id}, uid {uid}): \
-                         message not archived; gap-fill will keep detecting it"
-                    ),
-                );
-                continue;
-            }
-            Err(e) => {
-                report(outcome.stored);
-                return Err(e);
-            }
+            session_error(
+                account_id,
+                format!(
+                    "{missing} message(s) in mailbox {mailbox_id}: the server returned no body; \
+                     not archived, gap-fill will retry"
+                ),
+            );
         }
-        outcome.stored += 1;
-        if let Some(progress) = progress {
-            progress(outcome.stored, None, None)?;
+        for (uid, size, body, internal_date) in fetched {
+            let size = if size > 0 { size } else { body.len() as u32 };
+            match extract_raw_and_store_it(&body, uid, size, internal_date, account_id, mailbox_id)
+                .await
+            {
+                Ok(()) => {}
+                Err(e) if e.code() == ErrorCode::EmailParseError => {
+                    outcome.parse_skipped += 1;
+                    tracing::warn!(
+                        account_id,
+                        mailbox_id,
+                        uid,
+                        "Skipping unparseable email (not archived)"
+                    );
+                    let _ = DownloadState::append_session_error(
+                        account_id,
+                        format!(
+                            "Skipped unparseable email (mailbox {mailbox_id}, uid {uid}): \
+                             message not archived; gap-fill will keep detecting it"
+                        ),
+                    );
+                    continue;
+                }
+                Err(e) => {
+                    report(outcome.stored);
+                    return Err(e);
+                }
+            }
+            outcome.stored += 1;
+            if let Some(progress) = progress {
+                progress(outcome.stored, None, None)?;
+            }
         }
     }
     Ok(outcome)

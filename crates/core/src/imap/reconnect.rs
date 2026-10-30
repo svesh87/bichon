@@ -59,9 +59,26 @@ pub fn delay_for(attempt: u32, delays: &[u64]) -> Duration {
     Duration::from_secs(delays.get(index).copied().unwrap_or(0))
 }
 
-/// Sleep before reconnect attempt `attempt` (1-based).
+/// Sleep before reconnect attempt `attempt` (1-based), for accounts in the
+/// gentle mode (a chunk size set, `crate::imap::chunked`); others reconnect
+/// at once, as upstream does.
 pub async fn pause_before_reconnect(account_id: u64, attempt: u32) {
-    wait(account_id, attempt, delay_for(attempt, &RECONNECT_DELAYS)).await;
+    let gentle = crate::imap::chunked::chunk_for_account(account_id).is_some();
+    wait(
+        account_id,
+        attempt,
+        delay_if(gentle, attempt, &RECONNECT_DELAYS),
+    )
+    .await;
+}
+
+/// The delay for attempt `attempt`, or none outside the gentle mode.
+fn delay_if(gentle: bool, attempt: u32, delays: &[u64]) -> Duration {
+    if gentle {
+        delay_for(attempt, delays)
+    } else {
+        Duration::ZERO
+    }
 }
 
 async fn wait(account_id: u64, attempt: u32, delay: Duration) {

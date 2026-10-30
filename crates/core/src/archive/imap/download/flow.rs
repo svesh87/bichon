@@ -1095,8 +1095,19 @@ async fn perform_incremental_sync(
     remote_mailbox: &MailBox,
     token: CancellationToken,
 ) -> BichonResult<Option<u32>> {
-    // svesh: UIDNEXT from this round's STATUS shows nothing new: no connection.
-    if super::unchanged::has_no_new_mail(local_mailbox, remote_mailbox) {
+    // svesh (gentle mode only): UIDNEXT from this round's STATUS shows nothing
+    // new: no connection. The folder is reported like a checked one.
+    if crate::imap::chunked::is_gentle(account)
+        && super::unchanged::has_no_new_mail(local_mailbox, remote_mailbox)
+    {
+        DownloadState::update_folder_progress(
+            account.id,
+            remote_mailbox.name.clone(),
+            0,
+            0,
+            FolderStatus::Success,
+            Some("No new emails found (UIDNEXT unchanged).".into()),
+        )?;
         return Ok(local_mailbox.highest_uid);
     }
     if remote_mailbox.exists > 0 {

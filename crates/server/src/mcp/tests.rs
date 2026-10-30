@@ -694,6 +694,10 @@ async fn account_chunk_setting_roundtrip() {
     update(json!({"imap_fetch_chunk_kb": 0})).await;
     assert_eq!(stored(read().await), Some(json!(0)));
     assert_eq!(chunk_for_account(id), None, "0 turns it off");
+    // Outside the gentle mode a reconnect does not wait (upstream behaviour).
+    let started = std::time::Instant::now();
+    bichon_core::imap::reconnect::pause_before_reconnect(id, 1).await;
+    assert!(started.elapsed() < std::time::Duration::from_secs(1));
 
     // An update that does not mention the field keeps it.
     update(json!({"account_name": "Chunks"})).await;

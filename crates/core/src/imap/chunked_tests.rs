@@ -144,6 +144,30 @@ async fn refused_fetch_counts_as_no_body() {
 }
 
 #[tokio::test]
+async fn no_body_in_parts_falls_back_to_whole() {
+    // Yandex answers a partial BODY.PEEK[]<0.N> of some messages without a
+    // body; the whole message then comes with a plain BODY.PEEK[].
+    let whole =
+        "* 1 FETCH (UID 6 INTERNALDATE \"06-Oct-2026 10:00:00 +0000\" BODY[] {5}\r\nhello)\r\n\
+                 {TAG} OK FETCH done\r\n";
+    let handle = mock()
+        .respond(
+            "<0.4>",
+            "* 1 FETCH (UID 6 FLAGS (\\Seen))\r\n{TAG} OK FETCH done\r\n",
+        )
+        .respond("BODY.PEEK[])", whole)
+        .start()
+        .await;
+    let mut s = session(&handle).await;
+    let (body, date) = fetch_message_in_chunks(&mut s, 6, 5, 4)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(body, b"hello");
+    assert_eq!(date, 1_791_280_800_000);
+}
+
+#[tokio::test]
 async fn retrieve_reports_errors_and_progress() {
     // The second part of message 1 never comes: an error, after reporting
     // what was stored so far (nothing).
@@ -175,15 +199,112 @@ async fn retrieve_skips_gone_messages_and_stops_when_cancelled() {
         seen.lock().unwrap().push(count);
         Ok(())
     };
-    // Both messages are gone on the server: nothing stored, no error.
+    // No body for either message (not in parts, not whole): nothing stored,
+    // no error, both counted as not archived so gap-fill retries them.
     let token = CancellationToken::new();
     let outcome = retrieve_in_chunks(&mut s, 1, 1, &[(1, 10), (2, 0)], 4, &token, Some(&progress))
         .await
         .unwrap();
-    assert_eq!(outcome, BatchFetchOutcome::default());
+    assert_eq!(outcome.stored, 0);
+    assert_eq!(outcome.parse_skipped, 2);
 
     token.cancel();
     let err = retrieve_in_chunks(&mut s, 1, 1, &[(1, 10)], 4, &token, Some(&progress)).await;
     assert!(err.is_err());
     assert_eq!(*seen.lock().unwrap(), vec![0]);
+}
+
+#[test]
+fn small_messages_are_grouped_large_ones_go_alone() {
+    let chunk = 100;
+    let steps = plan_steps(&[(1, 10), (2, 200), (3, 0), (4, 100), (5, 50)], chunk);
+    assert_eq!(
+        steps,
+        vec![
+            Step::Single(2, 200),
+            Step::Single(3, 0),
+            Step::Group(vec![(1, 10), (4, 100), (5, 50)]),
+        ]
+    );
+
+    // A group closes at GROUP_BYTES ...
+    let half = (GROUP_BYTES / 2) as u32;
+    let steps = plan_steps(&[(1, half), (2, half), (3, 1)], half);
+    assert_eq!(
+        steps,
+        vec![
+            Step::Group(vec![(1, half), (2, half)]),
+            Step::Group(vec![(3, 1)])
+        ]
+    );
+    // ... and at GROUP_MAX messages.
+    let many: Vec<(u32, u32)> = (1..=GROUP_MAX as u32 + 1).map(|uid| (uid, 1)).collect();
+    let steps = plan_steps(&many, chunk);
+    assert_eq!(steps.len(), 2);
+    assert!(matches!(&steps[1], Step::Group(g) if g == &vec![(GROUP_MAX as u32 + 1, 1)]));
+    assert!(plan_steps(&[], chunk).is_empty());
+}
+
+#[tokio::test]
+async fn group_fetch_returns_every_body() {
+    let response =
+        "* 1 FETCH (UID 4 INTERNALDATE \"06-Oct-2026 10:00:00 +0000\" BODY[] {3}\r\nabc)\r\n\
+         * 2 FETCH (UID 9 BODY[] {2}\r\nxy)\r\n\
+         * 3 FETCH (UID 7 FLAGS (\\Seen))\r\n\
+         {TAG} OK FETCH done\r\n";
+    let handle = mock().respond("UID FETCH 4,9,5", response).start().await;
+    let mut s = session(&handle).await;
+    let bodies = fetch_group(&mut s, &[(4, 3), (9, 2), (5, 1)])
+        .await
+        .unwrap();
+    // UID 5 is gone, UID 7 is an unsolicited flag update.
+    assert_eq!(
+        bodies,
+        vec![
+            (4, b"abc".to_vec(), 1_791_280_800_000),
+            (9, b"xy".to_vec(), 0)
+        ]
+    );
+}
+
+#[test]
+fn gentle_mode_only_with_a_chunk_size() {
+    use crate::account::migration::AccountModel;
+    let mut account = AccountModel::default();
+    // No setting (and no server default in tests): upstream behaviour.
+    assert_eq!(is_gentle(&account), CHUNK_BYTES.is_some());
+    account.imap_fetch_chunk_kb = Some(0);
+    assert!(!is_gentle(&account), "0 = off");
+    account.imap_fetch_chunk_kb = Some(128);
+    assert!(is_gentle(&account));
+}
+
+#[tokio::test]
+async fn retrieve_groups_small_messages() {
+    // Small messages go in one shared FETCH; here no body comes: nothing
+    // stored, no error, all three counted as not archived.
+    let handle = mock()
+        .respond("UID FETCH 1,2,3", "{TAG} OK FETCH done\r\n")
+        .start()
+        .await;
+    let mut s = session(&handle).await;
+    let token = CancellationToken::new();
+    let outcome = retrieve_in_chunks(&mut s, 1, 1, &[(1, 3), (2, 3), (3, 3)], 4, &token, None)
+        .await
+        .unwrap();
+    assert_eq!(outcome.stored, 0);
+    assert_eq!(outcome.parse_skipped, 3);
+
+    // A broken group response is an error, not a silent skip.
+    let handle = mock()
+        .respond("UID FETCH", "* 1 FETCH (UID 1 BODY[] {100}\r\nshort")
+        .start()
+        .await;
+    let mut s = session(&handle).await;
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        retrieve_in_chunks(&mut s, 1, 1, &[(1, 3), (2, 3)], 4, &token, None),
+    )
+    .await;
+    assert!(!matches!(result, Ok(Ok(_))));
 }
