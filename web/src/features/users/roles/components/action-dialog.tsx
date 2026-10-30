@@ -96,6 +96,9 @@ function getCategoryMap(isEnterprise: boolean): Record<'Global' | 'Account', { t
           'data:export:batch',
           'data:import:batch',
           'data:smtp:ingest',
+          // svesh: MCP permissions of the fork.
+          'account:sync',
+          'data:draft',
         ],
       },
     ],

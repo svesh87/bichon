@@ -162,8 +162,10 @@ pub async fn gap_fill_mailbox(
         return Ok(stats);
     }
 
-    // svesh: local snapshot first; with an unchanged UIDVALIDITY only the
-    // UIDs not archived yet go through the header scan below.
+    // svesh: local snapshot first. With an unchanged UIDVALIDITY the UIDs not
+    // archived in this folder are the missing ones: no header scan at all
+    // (storing dedups identical messages anyway). Otherwise every remote UID
+    // goes through the header comparison as before.
     let local_snapshots = crate::store::tantivy::envelope::ENVELOPE_MANAGER
         .get_envelope_snapshots_for_mailbox(account_id, local_mailbox.id)?;
     let scan_uids = super::unchanged::uids_to_scan(
@@ -172,19 +174,22 @@ pub async fn gap_fill_mailbox(
         &remote_uids,
         local_snapshots.iter().map(|s| s.uid),
     );
-    info!(
+    let by_uid = super::unchanged::same_uid_validity(local_mailbox, remote_mailbox);
+    let header_uids: &[u32] = if by_uid { &[] } else { &scan_uids };
+    warn!(
         account_id,
         mailbox = remote_mailbox.name,
         remote = remote_uids.len(),
-        to_scan = scan_uids.len(),
-        "Gap-fill: header scan"
+        missing_by_uid = if by_uid { scan_uids.len() } else { 0 },
+        header_scan = header_uids.len(),
+        "Gap-fill: plan"
     );
 
     // Phase 2: fetch header metadata for all remote uids in batches.
     // A failed batch counts its uids as failed (they cannot be diffed) but
     // does not abort the phase. A cancellation, however, leaves the header
     // list incomplete so the diff would be unreliable — return immediately.
-    let mut remote_headers: Vec<RemoteHeader> = Vec::with_capacity(scan_uids.len());
+    let mut remote_headers: Vec<RemoteHeader> = Vec::with_capacity(header_uids.len());
     let batch_size = account.download_batch_size.unwrap_or(DEFAULT_BATCH_SIZE) as usize;
     let mut cancelled = false;
     // Progress reported so far across all header batches, so the UI can show
@@ -197,12 +202,12 @@ pub async fn gap_fill_mailbox(
         GapFillState::update_folder_progress(
             account_id,
             remote_mailbox.name.clone(),
-            scan_uids.len() as u64,
+            header_uids.len() as u64,
             count,
             crate::imap::executor::slow_server_message(None, stall_secs),
         )
     };
-    for chunk in scan_uids.chunks(batch_size) {
+    for chunk in header_uids.chunks(batch_size) {
         if token.is_cancelled() {
             cancelled = true;
             break;
@@ -297,8 +302,12 @@ pub async fn gap_fill_mailbox(
 
     // Phase 3: local snapshot — taken before the header scan (svesh).
 
-    // Phase 4: diff
-    let missing_uids = compute_missing_uids(&remote_headers, &local_snapshots);
+    // Phase 4: diff (svesh: by UID when UIDVALIDITY is unchanged)
+    let missing_uids = if by_uid {
+        scan_uids.clone()
+    } else {
+        compute_missing_uids(&remote_headers, &local_snapshots)
+    };
     stats.candidate_count = missing_uids.len() as u64;
     if missing_uids.is_empty() {
         info!(

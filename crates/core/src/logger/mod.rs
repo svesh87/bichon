@@ -25,6 +25,8 @@ use tracing_log::LogTracer;
 use tracing_subscriber::fmt::{format::Writer, time::FormatTime};
 
 mod file;
+// svesh: BICHON_LOG_FILTER, per-target levels.
+pub mod filter;
 
 struct LocalTimer;
 
@@ -51,7 +53,7 @@ fn setup_stdout_logger(level: Level) -> Result<(), tracing::dispatcher::SetGloba
 
     if SETTINGS.bichon_json_logs {
         let subscriber = tracing_subscriber::fmt()
-            .with_max_level(level)
+            .with_env_filter(filter::env_filter(level))
             .with_ansi(with_ansi)
             .with_writer(std::io::stdout)
             .json()
@@ -66,7 +68,7 @@ fn setup_stdout_logger(level: Level) -> Result<(), tracing::dispatcher::SetGloba
             .with_timer(LocalTimer);
 
         let subscriber = tracing_subscriber::fmt()
-            .with_max_level(level)
+            .with_env_filter(filter::env_filter(level))
             .with_ansi(with_ansi)
             .with_writer(std::io::stdout)
             .event_format(format)

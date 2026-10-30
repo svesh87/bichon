@@ -42,18 +42,23 @@ pub fn has_no_new_mail(local: &MailBox, remote: &MailBox) -> bool {
     }
 }
 
-/// The remote UIDs gap-fill has to compare by headers. With the same
-/// UIDVALIDITY on both sides a UID already archived in this folder is the same
-/// message, so only the others need the header scan (one FETCH per batch,
-/// slow on Yandex); with a changed or unknown UIDVALIDITY, all of them.
+/// Both sides know the folder's UIDVALIDITY and it is the same: a UID then
+/// names the same message locally and on the server.
+pub fn same_uid_validity(local: &MailBox, remote: &MailBox) -> bool {
+    local.uid_validity.is_some() && local.uid_validity == remote.uid_validity
+}
+
+/// The remote UIDs gap-fill has to consider. With the same UIDVALIDITY the
+/// ones not archived in this folder are missing as they are: no header scan
+/// at all (one FETCH per batch, seconds each on Yandex); with a changed or
+/// unknown UIDVALIDITY all of them, for the header comparison.
 pub fn uids_to_scan(
     local: &MailBox,
     remote: &MailBox,
     remote_uids: &[u32],
     archived_uids: impl IntoIterator<Item = u64>,
 ) -> Vec<u32> {
-    let same_validity = local.uid_validity.is_some() && local.uid_validity == remote.uid_validity;
-    if !same_validity {
+    if !same_uid_validity(local, remote) {
         return remote_uids.to_vec();
     }
     let archived: std::collections::HashSet<u64> = archived_uids.into_iter().collect();

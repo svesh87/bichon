@@ -14,8 +14,9 @@ crates/core/src/imap/chunked_tests.rs
 crates/core/src/imap/reconnect.rs
 crates/core/src/imap/reconnect_tests.rs
 crates/core/src/archive/imap/download/unchanged.rs
-crates/core/src/archive/imap/download/unchanged_tests.rs"
-OWN_RE='^(crates/server/src/mcp/|crates/core/src/imap/(chunked|reconnect)|crates/core/src/archive/imap/download/unchanged)'
+crates/core/src/archive/imap/download/unchanged_tests.rs
+crates/core/src/logger/filter.rs"
+OWN_RE='^(crates/server/src/mcp/|crates/core/src/imap/(chunked|reconnect)|crates/core/src/archive/imap/download/unchanged|crates/core/src/logger/filter)'
 
 echo "== rustfmt"
 # shellcheck disable=SC2086 # the list is globs
@@ -35,7 +36,7 @@ fi
 echo "== tests + coverage"
 cargo llvm-cov clean --workspace
 cargo llvm-cov --no-report --locked -p bichon-server --lib -- mcp::
-cargo llvm-cov --no-report --locked -p bichon-core --lib -- imap::chunked imap::reconnect archive::imap::download
+cargo llvm-cov --no-report --locked -p bichon-core --lib -- imap::chunked imap::reconnect archive::imap::download logger::filter
 cargo llvm-cov report --json --summary-only --output-path cov.json
 python3 -I - "$MIN_COVERAGE" <<'EOF'
 import json, re, sys

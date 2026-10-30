@@ -62,6 +62,9 @@ export function getPermissions(
         { label: t('permission.data.export_batch'), value: 'data:export:batch' },
         { label: t('permission.data.import_batch'), value: 'data:import:batch' },
         { label: t('permission.data.smtp_ingest'), value: 'data:smtp:ingest' },
+        // svesh: MCP permissions of the fork.
+        { label: t('permission.account.sync'), value: 'account:sync' },
+        { label: t('permission.data.draft'), value: 'data:draft' },
     ]
 
     // 4. Compliance suite (Enterprise only — inert permissions otherwise)

@@ -1892,7 +1892,8 @@
       "create": "Create Email Accounts",
       "manage": "Manage Assigned Accounts",
       "manage_all": "Manage All Account Configs",
-      "read_details": "Read Assigned Account Details"
+      "read_details": "Read Assigned Account Details",
+      "sync": "Sync Assigned Accounts Now (MCP)"
     },
     "approval": {
       "decide": "Approve or Reject Dual-Control Requests (Enterprise)"
@@ -1918,7 +1919,8 @@
       "raw_download_all": "Download All Raw Emails",
       "read": "Read Assigned Email Data",
       "read_all": "Read All Email Data",
-      "smtp_ingest": "Ingest Emails via SMTP Protocol"
+      "smtp_ingest": "Ingest Emails via SMTP Protocol",
+      "draft": "Save Drafts to Assigned Mailboxes (MCP, never sends)"
     },
     "dialog": {
       "account_description": "Permissions scoped to the selected account.",

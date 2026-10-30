@@ -20,7 +20,6 @@ use crate::logger::LocalTimer;
 use crate::settings::cli::SETTINGS;
 use crate::settings::dir::DATA_DIR_MANAGER;
 use std::sync::OnceLock;
-use tracing::level_filters::LevelFilter;
 use tracing::Level;
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -35,7 +34,8 @@ pub fn setup_file_logger(level: Level) -> Result<(), tracing::dispatcher::SetGlo
     let (server_nonb, server_guard) = server_log_writer();
     LOG_WORKER_GUARD.set(vec![server_guard]).unwrap();
 
-    let registry = tracing_subscriber::registry().with(LevelFilter::from_level(level));
+    // svesh: BICHON_LOG_FILTER (per-target levels) or BICHON_LOG_LEVEL.
+    let registry = tracing_subscriber::registry().with(super::filter::env_filter(level));
 
     // Set the combined subscriber as the global default
     if SETTINGS.bichon_json_logs {
