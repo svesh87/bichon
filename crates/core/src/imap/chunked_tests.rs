@@ -308,3 +308,17 @@ async fn retrieve_groups_small_messages() {
     .await;
     assert!(!matches!(result, Ok(Ok(_))));
 }
+
+#[tokio::test]
+async fn probe_shows_the_servers_refusal() {
+    // The FETCH stream drops the final status; the probe reads it.
+    let handle = mock()
+        .respond("UID FETCH 8 ", "{TAG} NO [UNAVAILABLE] Try again later\r\n")
+        .respond("UID FETCH 9 ", "{TAG} OK FETCH done\r\n")
+        .start()
+        .await;
+    let mut s = session(&handle).await;
+    let refused = probe(&mut s, 8).await;
+    assert!(refused.contains("Try again later"), "{refused}");
+    assert!(probe(&mut s, 9).await.starts_with("OK"));
+}

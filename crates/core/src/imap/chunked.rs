@@ -103,9 +103,11 @@ pub async fn fetch_message_in_chunks(
     }
     let whole = fetch_group(session, &[(uid, size)]).await?;
     if whole.is_empty() {
+        let server = probe(session, uid).await;
         tracing::warn!(
             uid,
             size,
+            server,
             "No body for the message, neither in parts nor whole"
         );
     } else {
@@ -116,6 +118,19 @@ pub async fn fetch_message_in_chunks(
         );
     }
     Ok(whole.into_iter().next().map(|(_, body, date)| (body, date)))
+}
+
+/// What the server says to a one-byte fetch of `uid`: the FETCH stream drops
+/// the command's final status, so a refusal (`NO [...] text`) is otherwise
+/// invisible. For the log only.
+pub async fn probe(session: &mut Session<Box<dyn SessionStream>>, uid: u32) -> String {
+    match session
+        .run_command_and_check_ok(format!("UID FETCH {uid} (UID BODY.PEEK[]<0.1>)"))
+        .await
+    {
+        Ok(()) => "OK (the server answers, but sent no body)".to_string(),
+        Err(e) => format!("{e:?}"),
+    }
 }
 
 async fn fetch_parts(
@@ -339,10 +354,24 @@ pub async fn retrieve_in_chunks(
         if fetched.len() < expected {
             let missing = expected - fetched.len();
             outcome.parse_skipped += missing as u64;
+            // The server's word on the first missing one of a group (a single
+            // message was probed in fetch_message_in_chunks already).
+            let server = match &step {
+                Step::Group(group) => {
+                    let got: std::collections::HashSet<u32> =
+                        fetched.iter().map(|(uid, ..)| *uid).collect();
+                    match group.iter().find(|(uid, _)| !got.contains(uid)) {
+                        Some((uid, _)) => probe(session, *uid).await,
+                        None => String::new(),
+                    }
+                }
+                Step::Single(..) => String::new(),
+            };
             tracing::warn!(
                 account_id,
                 mailbox_id,
                 missing,
+                server,
                 "No body from the server for some messages: not archived, gap-fill will retry"
             );
             session_error(
