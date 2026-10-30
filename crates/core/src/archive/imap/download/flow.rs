@@ -1091,6 +1091,10 @@ async fn perform_incremental_sync(
     remote_mailbox: &MailBox,
     token: CancellationToken,
 ) -> BichonResult<Option<u32>> {
+    // svesh: UIDNEXT from this round's STATUS shows nothing new: no connection.
+    if super::unchanged::has_no_new_mail(local_mailbox, remote_mailbox) {
+        return Ok(local_mailbox.highest_uid);
+    }
     if remote_mailbox.exists > 0 {
         // Use stored highest_uid if available; otherwise fall back to Tantivy
         // query once (backward compatibility with pre-existing databases).

@@ -18,6 +18,8 @@
 
 
 pub mod capabilities;
+// svesh: opt-in chunked body download.
+pub mod chunked;
 pub mod client;
 pub mod executor;
 pub mod manager;

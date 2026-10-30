@@ -42,6 +42,8 @@ pub mod download_type;
 pub mod gap_fill;
 pub mod flow;
 pub mod rebuild;
+// svesh: skip folders without new mail.
+pub mod unchanged;
 
 pub async fn process_imap_download(
     account: &AccountModel,

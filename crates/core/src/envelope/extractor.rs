@@ -94,6 +94,22 @@ pub async fn extract_envelope_and_store_it(
     .map(|_| ())
 }
 
+/// svesh: like [`extract_envelope_and_store_it`], for a body assembled outside
+/// a single FETCH response (chunked download, `crate::imap::chunked`).
+pub async fn extract_raw_and_store_it(
+    body: &[u8],
+    uid: u32,
+    size: u32,
+    internal_date: i64,
+    account_id: u64,
+    mailbox_id: u64,
+) -> BichonResult<()> {
+    let _write_guard = WRITE_GATE.acquire(BACKUP_ACQUIRE_TIMEOUT).await?;
+    extract_envelope_core(body, uid, size, internal_date, account_id, mailbox_id, None)
+        .await
+        .map(|_| ())
+}
+
 pub async fn extract_envelope_from_eml(
     body: &[u8],
     account_id: u64,

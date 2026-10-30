@@ -35,7 +35,7 @@ const BODY_FETCH_COMMAND: &str = "(UID INTERNALDATE RFC822.SIZE BODY.PEEK[])";
 const SIZE_ONLY_FETCH: &str = "(UID RFC822.SIZE)";
 const MAX_NETWORK_RETRIES: u32 = 3;
 
-fn classify_imap_error(e: &async_imap::error::Error) -> ErrorCode {
+pub(crate) fn classify_imap_error(e: &async_imap::error::Error) -> ErrorCode {
     match e {
         async_imap::error::Error::Io(io) => matches!(
             io.kind(),
@@ -714,6 +714,8 @@ impl ImapExecutor {
         let limit = max_email_size_bytes.unwrap_or(DEFAULT_MAX_EMAIL_SIZE);
 
         // PASS 1: fetch only SIZE to identify oversized messages
+        // svesh: sizes kept for the chunked mode.
+        let mut sized: Vec<(u32, u32)> = Vec::new();
         let acceptable_uids = {
             let mut size_stream = session
                 .uid_fetch(uid_set, SIZE_ONLY_FETCH)
@@ -730,6 +732,7 @@ impl ImapExecutor {
                 let msg_size = fetch.size.unwrap_or(0) as u64;
                 if msg_size == 0 || msg_size <= limit {
                     uids.push(uid);
+                    sized.push((uid, msg_size as u32));
                 } else {
                     tracing::warn!(
                         account_id,
@@ -746,6 +749,15 @@ impl ImapExecutor {
 
         if acceptable_uids.is_empty() {
             return Ok(BatchFetchOutcome::default());
+        }
+
+        // svesh: chunked mode (BICHON_IMAP_FETCH_CHUNK_KB) fetches one message
+        // at a time in parts instead of the whole batch in one FETCH.
+        if let Some(chunk) = *crate::imap::chunked::CHUNK_BYTES {
+            return crate::imap::chunked::retrieve_in_chunks(
+                session, account_id, mailbox_id, &sized, chunk, &token, progress,
+            )
+            .await;
         }
 
         // PASS 2: fetch bodies only for acceptable UIDs
