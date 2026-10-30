@@ -15,8 +15,9 @@ crates/core/src/imap/reconnect.rs
 crates/core/src/imap/reconnect_tests.rs
 crates/core/src/archive/imap/download/unchanged.rs
 crates/core/src/archive/imap/download/unchanged_tests.rs
-crates/core/src/logger/filter.rs"
-OWN_RE='^(crates/server/src/mcp/|crates/core/src/imap/(chunked|reconnect)|crates/core/src/archive/imap/download/unchanged|crates/core/src/logger/filter)'
+crates/core/src/logger/filter.rs
+crates/server/src/svesh_import.rs"
+OWN_RE='^(crates/server/src/(mcp/|svesh_import)|crates/core/src/imap/(chunked|reconnect)|crates/core/src/archive/imap/download/unchanged|crates/core/src/logger/filter)'
 
 echo "== rustfmt"
 # shellcheck disable=SC2086 # the list is globs
@@ -41,7 +42,7 @@ cargo llvm-cov report --json --summary-only --output-path cov.json
 python3 -I - "$MIN_COVERAGE" <<'EOF'
 import json, re, sys
 minimum = float(sys.argv[1])
-own = re.compile(r"/crates/(server/src/mcp/|core/src/imap/(chunked|reconnect)\.rs|core/src/archive/imap/download/unchanged\.rs)")
+own = re.compile(r"/crates/(server/src/(mcp/|svesh_import\.rs)|core/src/imap/(chunked|reconnect)\.rs|core/src/archive/imap/download/unchanged\.rs|core/src/logger/filter\.rs)")
 files = [f for f in json.load(open("cov.json"))["data"][0]["files"]
          if own.search(f["filename"]) and not f["filename"].endswith("tests.rs")]
 covered = sum(f["summary"]["lines"]["covered"] for f in files)

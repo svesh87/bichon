@@ -136,6 +136,14 @@ pub fn build_routes() -> impl Endpoint {
         app_logic
     };
 
+    // svesh: import into IMAP folders under server UIDs (crate::svesh_import).
+    let app_logic = app_logic.nest_no_strip(
+        "/svesh-api",
+        crate::svesh_import::routes()
+            .with(ErrorCapture)
+            .with(Tracing),
+    );
+
     let app_logic = add_web_assets(app_logic);
 
     Route::new()

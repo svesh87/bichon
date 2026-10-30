@@ -635,6 +635,97 @@ async fn store_scenarios() {
     sync_now_runs_and_checks_rights().await;
     endpoint_speaks_mcp_behind_the_token_guard().await;
     account_chunk_setting_roundtrip().await;
+    import_into_imap_folder().await;
+}
+
+/// crate::svesh_import: a message stored into an IMAP folder under its UID.
+async fn import_into_imap_folder() {
+    let (account_id, _) = imap_account("import@example.com", true).await;
+    let mailbox_id = account_id ^ 0x1111;
+    MailBox::batch_upsert(&[MailBox {
+        id: mailbox_id,
+        account_id,
+        name: "INBOX".into(),
+        delimiter: Some("/".into()),
+        ..Default::default()
+    }])
+    .unwrap();
+    let token = crate::tests::admin_token().await;
+    let auth = format!("Bearer {token}");
+    let cli = TestClient::new(crate::svesh_import::routes())
+        .default_header("X-Forwarded-For", "127.0.0.1");
+    let uids = || async {
+        let resp = cli
+            .get(format!(
+                "/svesh-api/archived-uids/{account_id}/{mailbox_id}"
+            ))
+            .header("Authorization", &auth)
+            .send()
+            .await;
+        resp.assert_status_is_ok();
+        serde_json::from_str::<Vec<u64>>(&resp.0.into_body().into_string().await.unwrap()).unwrap()
+    };
+    let import = |uid: u32, body: &'static str| {
+        cli.post(format!(
+            "/svesh-api/import/{account_id}/{mailbox_id}?uid={uid}&internal_date=1000"
+        ))
+        .header("Authorization", &auth)
+        .body(body)
+        .send()
+    };
+
+    assert!(uids().await.is_empty());
+    let resp = import(5, ORIGINAL).await;
+    resp.assert_status_is_ok();
+    assert!(resp
+        .0
+        .into_body()
+        .into_string()
+        .await
+        .unwrap()
+        .contains("stored"));
+    ENVELOPE_MANAGER.prepare_for_backup().await.unwrap();
+    let mut seen = Vec::new();
+    for _ in 0..50 {
+        seen = uids().await;
+        if !seen.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert_eq!(seen, vec![5]);
+    let again = import(5, ORIGINAL).await;
+    assert!(again
+        .0
+        .into_body()
+        .into_string()
+        .await
+        .unwrap()
+        .contains("exists"));
+
+    // Bad requests: uid 0, empty body, unknown folder, local account, no token.
+    assert!(import(0, ORIGINAL).await.0.status().is_client_error());
+    assert!(import(6, "").await.0.status().is_client_error());
+    let resp = cli
+        .get(format!("/svesh-api/archived-uids/{account_id}/1"))
+        .header("Authorization", &auth)
+        .send()
+        .await;
+    assert_eq!(resp.0.status(), StatusCode::NOT_FOUND);
+    let fx = fixture().await;
+    let resp = cli
+        .get(format!("/svesh-api/archived-uids/{}/1", fx.archive_id))
+        .header("Authorization", &auth)
+        .send()
+        .await;
+    assert_eq!(resp.0.status(), StatusCode::BAD_REQUEST);
+    let resp = cli
+        .get(format!(
+            "/svesh-api/archived-uids/{account_id}/{mailbox_id}"
+        ))
+        .send()
+        .await;
+    assert!(resp.0.status().is_client_error());
 }
 
 /// The per-account chunk size (crates/core/src/imap/chunked.rs) through the
