@@ -64,6 +64,7 @@ function mapAccountToFormValues(account: AccountModel): AccountFormValues {
     download_batch_size: account.download_batch_size ?? 30,
     max_email_size_bytes: account.max_email_size_bytes ?? 100 * 1024 * 1024,
     imap_fetch_chunk_kb: account.imap_fetch_chunk_kb ?? undefined,
+    imap_reconnect_delays: account.imap_reconnect_delays ?? undefined,
     auto_download_new_mailboxes: account.auto_download_new_mailboxes ?? false,
     download_schedule: account.download_schedule ?? undefined,
     archive_rules: account.archive_rules ?? undefined,
@@ -172,6 +173,11 @@ export function AccountSettingsPage({ accountId }: AccountSettingsPageProps) {
         payload.imap_fetch_chunk_kb = data.imap_fetch_chunk_kb;
       } else if (account?.imap_fetch_chunk_kb !== undefined && account?.imap_fetch_chunk_kb !== null) {
         payload.clear_imap_fetch_chunk_kb = true;
+      }
+      if (data.imap_reconnect_delays) {
+        payload.imap_reconnect_delays = data.imap_reconnect_delays;
+      } else if (account?.imap_reconnect_delays) {
+        payload.clear_imap_reconnect_delays = true;
       }
 
       if (data.retention_days !== undefined) {

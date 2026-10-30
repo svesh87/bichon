@@ -169,6 +169,11 @@ export const getAccountSchema = (isEdit: boolean, t: (key: string) => string) =>
       .min(0, { message: t('validation.imapFetchChunkKbInvalid') })
       .max(65536, { message: t('validation.imapFetchChunkKbInvalid') })
       .optional(),
+    // svesh: seconds before each reconnect, comma-separated; empty = server default.
+    imap_reconnect_delays: z
+      .string()
+      .regex(/^\d{1,5}(,\d{1,5}){0,9}$/, { message: t('validation.imapReconnectDelaysInvalid') })
+      .optional(),
     auto_download_new_mailboxes: z.boolean(),
     download_schedule: z
       .string()

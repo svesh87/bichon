@@ -56,6 +56,14 @@ pub struct AccountCreateRequest {
     #[cfg_attr(feature = "web-api", oai(validator(maximum(value = "65536"))))]
     #[serde(default)]
     pub imap_fetch_chunk_kb: Option<u32>,
+    /// svesh: seconds before each reconnect, comma-separated (e.g. `30,60,120`;
+    /// `0` = none); absent = server default. Gentle mode only.
+    #[cfg_attr(
+        feature = "web-api",
+        oai(validator(max_length = 100, pattern = r"^\d{1,5}(,\d{1,5}){0,9}$"))
+    )]
+    #[serde(default)]
+    pub imap_reconnect_delays: Option<String>,
     pub use_dangerous: bool,
     pub pgp_key: Option<String>,
     pub imap_quota_bytes: Option<u64>,
@@ -243,6 +251,16 @@ pub struct AccountUpdateRequest {
     /// svesh: true = back to the server default for chunked download.
     #[serde(default)]
     pub clear_imap_fetch_chunk_kb: Option<bool>,
+    /// svesh: seconds before each reconnect, comma-separated; `0` = none.
+    #[cfg_attr(
+        feature = "web-api",
+        oai(validator(max_length = 100, pattern = r"^\d{1,5}(,\d{1,5}){0,9}$"))
+    )]
+    #[serde(default)]
+    pub imap_reconnect_delays: Option<String>,
+    /// svesh: true = back to the server default for reconnect delays.
+    #[serde(default)]
+    pub clear_imap_reconnect_delays: Option<bool>,
     pub use_dangerous: Option<bool>,
 
     pub pgp_key: Option<String>,

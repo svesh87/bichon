@@ -36,6 +36,14 @@ fn no_delay_outside_the_gentle_mode() {
 }
 
 #[test]
+fn account_setting_wins_over_server_default() {
+    assert_eq!(account_delays(Some("5,10")), vec![5, 10]);
+    assert_eq!(account_delays(Some("0")), vec![0]);
+    assert_eq!(account_delays(None), *RECONNECT_DELAYS);
+    assert_eq!(account_delays(Some("  ")), *RECONNECT_DELAYS);
+}
+
+#[test]
 fn delay_per_attempt_repeats_the_last() {
     let delays = [5, 10];
     assert_eq!(delay_for(0, &delays), Duration::from_secs(5));

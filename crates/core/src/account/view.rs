@@ -47,6 +47,8 @@ pub struct AccountResp {
     pub max_email_size_bytes: Option<u64>,
     /// svesh: chunked body download, KB per part; `None` = server default, `0` = off.
     pub imap_fetch_chunk_kb: Option<u32>,
+    /// svesh: seconds before each reconnect; `None` = server default.
+    pub imap_reconnect_delays: Option<String>,
     pub known_folders: Option<BTreeSet<String>>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -101,6 +103,7 @@ impl AccountResp {
             download_batch_size: account.download_batch_size,
             max_email_size_bytes: account.max_email_size_bytes,
             imap_fetch_chunk_kb: account.imap_fetch_chunk_kb,
+            imap_reconnect_delays: account.imap_reconnect_delays,
             known_folders: account.known_folders,
             created_at: account.created_at,
             updated_at: account.updated_at,

@@ -707,6 +707,26 @@ async fn account_chunk_setting_roundtrip() {
     assert_eq!(stored(read().await), None);
     assert_eq!(chunk_for_account(id), *CHUNK_BYTES);
 
+    // Reconnect delays: set, kept by other updates, cleared; invalid refused.
+    let delays = |body: Value| {
+        body.get("imap_reconnect_delays")
+            .filter(|v| !v.is_null())
+            .cloned()
+    };
+    update(json!({"imap_reconnect_delays": "5,10"})).await;
+    assert_eq!(delays(read().await), Some(json!("5,10")));
+    update(json!({"account_name": "Chunks 2"})).await;
+    assert_eq!(delays(read().await), Some(json!("5,10")));
+    update(json!({"clear_imap_reconnect_delays": true})).await;
+    assert_eq!(delays(read().await), None);
+    let resp = api()
+        .post(format!("/api/v1/account/{id}"))
+        .header("Authorization", &auth)
+        .body_json(&json!({"imap_reconnect_delays": "30; 60"}))
+        .send()
+        .await;
+    assert!(resp.0.status().is_client_error());
+
     // Out of range is refused by the API.
     let resp = api()
         .post(format!("/api/v1/account/{id}"))

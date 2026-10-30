@@ -277,6 +277,11 @@ export function AccountDetailDrawer({ open, onOpenChange, currentRow }: Props) {
                           ? t('accounts.imapFetchChunkKbOff', 'Off')
                           : `${row.imap_fetch_chunk_kb} KB`}
                     </InfoRow>
+                    <InfoRow label={t('accounts.imapReconnectDelays', 'Reconnect delays')}>
+                      {row.imap_reconnect_delays
+                        ? `${row.imap_reconnect_delays} s`
+                        : t('accounts.imapFetchChunkKbDefault', 'Server default')}
+                    </InfoRow>
                     <InfoRow label={t('accounts.downloadSchedule', 'Download schedule')}>
                       {row.download_schedule
                         ? (

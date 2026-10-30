@@ -252,6 +252,7 @@ impl From<AccountV3> for AccountModel {
             download_batch_size: value.sync_batch_size,
             max_email_size_bytes: None,
             imap_fetch_chunk_kb: None,
+            imap_reconnect_delays: None,
             known_folders: value.known_folders,
             created_at: value.created_at,
             updated_at: value.updated_at,

@@ -58,7 +58,7 @@ judged: it carries warnings of its own.
 | `BICHON_ENABLE_MCP=true` | mount `/mcp` |
 | `BICHON_MCP_FILES_DIR` | file exchange directory: attachments are saved under `attachments/<account>/<date subject>/`, draft attachments are read only from inside it |
 | `BICHON_LOG_FILTER` | per-target log levels, `RUST_LOG` syntax (e.g. `info,poem_mcpserver=warn`: the MCP library logs whole requests and responses at info); overrides `BICHON_LOG_LEVEL` |
-| `BICHON_IMAP_RECONNECT_DELAYS` | seconds to wait before each reconnect after a dropped connection, comma-separated (default `30,60,120`, the last repeats; `0` = no wait) |
+| `BICHON_IMAP_RECONNECT_DELAYS` | gentle mode: seconds to wait before each reconnect after a dropped connection, comma-separated (default `30,60,120`, the last repeats; `0` = no wait). Default for accounts without their own "Reconnect delays" |
 | `BICHON_IMAP_FETCH_CHUNK_KB` | chunked body download, part size in KB (4–65536; Thunderbird uses 136); unset or 0 — off, upstream behaviour. Default for accounts without their own "Chunk size" |
 
 ## Agent access

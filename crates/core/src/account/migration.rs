@@ -460,6 +460,11 @@ pub struct Account {
     /// `None` = the server default (`BICHON_IMAP_FETCH_CHUNK_KB`), `0` = off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imap_fetch_chunk_kb: Option<u32>,
+    /// svesh: seconds to wait before each reconnect after a dropped connection,
+    /// comma-separated (`crate::imap::reconnect`), in the gentle mode only.
+    /// `None` = the server default (`BICHON_IMAP_RECONNECT_DELAYS`), `"0"` = none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imap_reconnect_delays: Option<String>,
     pub known_folders: Option<BTreeSet<String>>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -583,6 +588,7 @@ impl Account {
             download_batch_size: request.download_batch_size,
             max_email_size_bytes: request.max_email_size_bytes,
             imap_fetch_chunk_kb: request.imap_fetch_chunk_kb,
+            imap_reconnect_delays: request.imap_reconnect_delays,
             date_before: request.date_before,
             auto_download_new_mailboxes: request.auto_download_new_mailboxes,
             imap_quota_bytes: request.imap_quota_bytes,
@@ -1125,6 +1131,12 @@ impl Account {
             }
             if request.clear_imap_fetch_chunk_kb == Some(true) {
                 new.imap_fetch_chunk_kb = None;
+            }
+            if let Some(delays) = &request.imap_reconnect_delays {
+                new.imap_reconnect_delays = Some(delays.clone());
+            }
+            if request.clear_imap_reconnect_delays == Some(true) {
+                new.imap_reconnect_delays = None;
             }
         }
 
@@ -1747,6 +1759,7 @@ mod tests {
             download_batch_size: None,
             max_email_size_bytes: None,
             imap_fetch_chunk_kb: None,
+            imap_reconnect_delays: None,
             use_dangerous: false,
             pgp_key: None,
             imap_quota_bytes: None,

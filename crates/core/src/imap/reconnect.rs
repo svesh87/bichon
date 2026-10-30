@@ -24,8 +24,9 @@
 //! failed" and the batch or folder was given up. Waiting before the new
 //! LOGIN lets the server calm down.
 //!
-//! `BICHON_IMAP_RECONNECT_DELAYS`: seconds per attempt, comma-separated
-//! (default `30,60,120`; the last value repeats; `0` = no wait).
+//! Seconds per attempt, comma-separated (the last value repeats; `0` = no
+//! wait): the account's "reconnect delays" setting, else the server default
+//! `BICHON_IMAP_RECONNECT_DELAYS`, else `30,60,120`. Gentle mode only.
 
 use std::{sync::LazyLock, time::Duration};
 
@@ -63,13 +64,22 @@ pub fn delay_for(attempt: u32, delays: &[u64]) -> Duration {
 /// gentle mode (a chunk size set, `crate::imap::chunked`); others reconnect
 /// at once, as upstream does.
 pub async fn pause_before_reconnect(account_id: u64, attempt: u32) {
-    let gentle = crate::imap::chunked::chunk_for_account(account_id).is_some();
-    wait(
-        account_id,
-        attempt,
-        delay_if(gentle, attempt, &RECONNECT_DELAYS),
-    )
-    .await;
+    let (gentle, delays) = match crate::account::migration::AccountModel::get(account_id) {
+        Ok(account) => (
+            crate::imap::chunked::is_gentle(&account),
+            account_delays(account.imap_reconnect_delays.as_deref()),
+        ),
+        Err(_) => (false, Vec::new()),
+    };
+    wait(account_id, attempt, delay_if(gentle, attempt, &delays)).await;
+}
+
+/// The account's own delays if set and valid, else the server default.
+pub fn account_delays(setting: Option<&str>) -> Vec<u64> {
+    match setting.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(own) => parse_delays(Some(own)),
+        None => RECONNECT_DELAYS.clone(),
+    }
 }
 
 /// The delay for attempt `attempt`, or none outside the gentle mode.

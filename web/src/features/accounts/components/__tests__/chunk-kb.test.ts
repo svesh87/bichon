@@ -42,3 +42,22 @@ describe('Account Schema - imap_fetch_chunk_kb', () => {
     }
   })
 })
+
+describe('Account Schema - imap_reconnect_delays', () => {
+  const schema = getAccountSchema(false, t)
+
+  it.each(['30,60,120', '0', '5'])('accepts %s', (value) => {
+    expect(schema.safeParse({ ...baseData, imap_reconnect_delays: value }).success).toBe(true)
+  })
+
+  it.each(['', '30, 60', '30;60', '-1', 'a', '1,2,3,4,5,6,7,8,9,10,11', '123456'])(
+    'rejects %s',
+    (value) => {
+      const result = schema.safeParse({ ...baseData, imap_reconnect_delays: value })
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error.issues[0].message).toBe('validation.imapReconnectDelaysInvalid')
+      }
+    }
+  )
+})

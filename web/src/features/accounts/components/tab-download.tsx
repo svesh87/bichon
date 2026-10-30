@@ -454,6 +454,32 @@ export function TabDownload() {
               </FormItem>
             )}
           />
+          {/* svesh: reconnect delays (gentle mode) */}
+          <FormField
+            control={control}
+            name="imap_reconnect_delays"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('accounts.imapReconnectDelays')}</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      className="flex-1"
+                      placeholder="30,60,120"
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\s+/g, '');
+                        field.onChange(value === '' ? undefined : value);
+                      }}
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">s</span>
+                  </div>
+                </FormControl>
+                <FormDescription>{t('accounts.imapReconnectDelaysDescription')}</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
       </div>
 

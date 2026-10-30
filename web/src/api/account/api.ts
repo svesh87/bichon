@@ -194,6 +194,8 @@ export interface AccountModel {
     max_email_size_bytes?: number;
     // svesh: chunked download, KB per part; absent = server default, 0 = off.
     imap_fetch_chunk_kb?: number;
+    // svesh: seconds before each reconnect ("30,60,120"); absent = server default.
+    imap_reconnect_delays?: string;
     created_by: number;
     created_user_name: string;
     created_user_email: string;

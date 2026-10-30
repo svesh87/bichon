@@ -191,6 +191,7 @@ mod tests {
             download_batch_size: None,
             max_email_size_bytes: None,
             imap_fetch_chunk_kb: None,
+            imap_reconnect_delays: None,
             use_dangerous: false,
             pgp_key: None,
             imap_quota_bytes: None,
