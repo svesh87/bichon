@@ -1,0 +1,41 @@
+name: mirror
+
+# Keeps this fork a copy of rustmailer/bichon: main and tags. Runs from the default branch
+# "mirror" (cron runs only there), so main stays exactly upstream's.
+# - main: fast-forward only. A rewritten or deleted upstream history fails the run (GitHub
+#   mails the failure) instead of overwriting the copy.
+# - tags: new ones are pushed; existing ones are never moved or deleted (a moved upstream tag
+#   fails the push, the copy keeps the old one).
+# MIRROR_TOKEN: fine-grained PAT on this repository only, Contents and Workflows read/write
+# (GITHUB_TOKEN may not push commits that change .github/workflows, and upstream's do).
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency: mirror
+
+jobs:
+  mirror:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Mirror rustmailer/bichon
+        env:
+          TOKEN: ${{ secrets.MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          git init -q mirror && cd mirror
+          git remote add upstream https://github.com/rustmailer/bichon.git
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --tags upstream main
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor origin/main upstream/main; then
+            echo "::error::upstream main is not a fast-forward of this copy (rewritten or deleted history); not touching it"
+            exit 1
+          fi
+          git push -q origin upstream/main:refs/heads/main
+          git push -q origin --tags
+          echo "main at $(git rev-parse --short upstream/main), $(git tag | wc -l) tags"
